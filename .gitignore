@@ -1,4 +1,7 @@
 .DS_Store
+.env
+.env.local
+.env*.local
 node_modules
 T-IOT-902-NCE_1
 *-firebase-adminsdk-*.json
