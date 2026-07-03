@@ -80,6 +80,7 @@ export default function DashboardClient() {
       </header>
 
       {error ? <div className="alert">{error}</div> : null}
+      {data?.warning ? <div className="alert">{data.warning}</div> : null}
 
       <section className="status-grid" aria-label="Indicateurs">
         <StatCard icon={<Activity size={22} />} label="Paquets" value={String(data?.summary.total ?? 0)} detail={data?.source || "demo"} />

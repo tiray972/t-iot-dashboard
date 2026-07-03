@@ -20,14 +20,19 @@ const DEFAULT_LIMIT = 100;
 export async function loadDashboardData(): Promise<DashboardResponse> {
   const limit = readLimit();
 
-  if (process.env.FIREBASE_RTDB_URL) {
-    const items = await fetchRealtimeDatabase(limit);
-    return buildResponse("firebase-rtdb", items);
-  }
+  try {
+    if (process.env.FIREBASE_RTDB_URL) {
+      const items = await fetchRealtimeDatabase(limit);
+      return buildResponse("firebase-rtdb", items);
+    }
 
-  if (process.env.FIREBASE_FIRESTORE_PROJECT_ID) {
-    const items = await fetchFirestore(limit);
-    return buildResponse("firestore", items);
+    if (process.env.FIREBASE_FIRESTORE_PROJECT_ID) {
+      const items = await fetchFirestore(limit);
+      return buildResponse("firestore", items);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Firebase unavailable";
+    return buildResponse("demo", buildDemoReadings(), message);
   }
 
   return buildResponse("demo", buildDemoReadings());
@@ -182,12 +187,17 @@ function decodeFirestoreValue(value: FirestoreValue): unknown {
   return undefined;
 }
 
-function buildResponse(source: DashboardResponse["source"], items: LoraReading[]): DashboardResponse {
+function buildResponse(
+  source: DashboardResponse["source"],
+  items: LoraReading[],
+  warning?: string
+): DashboardResponse {
   const latest = items.at(-1);
 
   return {
     source,
     generatedAt: new Date().toISOString(),
+    warning,
     items,
     summary: {
       total: items.length,

@@ -15,6 +15,7 @@ export type LoraReading = {
 export type DashboardResponse = {
   source: "firebase-rtdb" | "firestore" | "demo";
   generatedAt: string;
+  warning?: string;
   items: LoraReading[];
   summary: {
     total: number;
