@@ -32,7 +32,7 @@ export async function loadDashboardData(): Promise<DashboardResponse> {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Firebase unavailable";
-    return buildResponse("demo", buildDemoReadings(), message);
+    return buildResponse("demo", [], `Firebase configure mais aucune donnee reelle chargee: ${message}`);
   }
 
   return buildResponse("demo", buildDemoReadings());

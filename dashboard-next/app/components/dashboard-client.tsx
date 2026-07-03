@@ -84,6 +84,9 @@ export default function DashboardClient() {
 
       {error ? <div className="alert">{error}</div> : null}
       {data?.warning ? <div className="alert">{data.warning}</div> : null}
+      {data?.source === "demo" && !data.warning ? (
+        <div className="alert">Mode demo: aucune configuration Firebase n'est active sur ce deploiement.</div>
+      ) : null}
 
       <section className="status-grid" aria-label="Indicateurs">
         <StatCard icon={<Activity size={22} />} label="Paquets" value={String(data?.summary.total ?? 0)} detail={data?.source || "demo"} />
