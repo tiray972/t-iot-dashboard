@@ -4,7 +4,7 @@ import { Activity, Battery, Flame, Gauge, Radio, RefreshCw, Signal, Thermometer,
 import { useEffect, useMemo, useState } from "react";
 import type { DashboardResponse, LoraReading } from "@/types/lora";
 
-const refreshMs = Number(process.env.NEXT_PUBLIC_DASHBOARD_REFRESH_MS || 15000);
+const refreshMs = Number(process.env.NEXT_PUBLIC_DASHBOARD_REFRESH_MS || 3000);
 
 type MetricKey = "temperature" | "humidity" | "heatIndex" | "battery" | "airRaw" | "p1" | "rssi" | "snr";
 
