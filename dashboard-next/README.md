@@ -52,3 +52,30 @@ La route `/api/firebase-data` accepte les donnees sous forme de documents/objets
 ```
 
 Les champs `temperature`, `humidity`, `battery`, `temp`, `hum`, ou `bat` sont aussi lus directement si tu les stockes deja dans Firebase.
+
+## Ingestion depuis le M5Stack
+
+La route `POST /api/ingest` accepte aussi le format Sensor.Community utilise par `T-IOT-902-NCE_1/LORA_CodeM5`:
+
+```json
+{
+  "gateway_id": "M5Stack_Receiver_Gateway",
+  "device_id": "12",
+  "payload": "id=12; temp=23.4; hum=54.1; hic=24.0; air=512.0; qualite=Bonne",
+  "rssi": -78,
+  "snr": 7.5,
+  "sensordatavalues": [
+    { "value_type": "temperature", "value": 23.4 },
+    { "value_type": "humidity", "value": 54.1 },
+    { "value_type": "P1", "value": 512 }
+  ]
+}
+```
+
+Le firmware peut donc continuer a envoyer vers Sensor.Community et poster en plus vers:
+
+```text
+https://ton-deploiement-vercel.vercel.app/api/ingest
+```
+
+Pour stocker les donnees, configure soit Realtime Database (`FIREBASE_RTDB_URL`), soit Firestore (`FIREBASE_FIRESTORE_PROJECT_ID`). Si Firestore retourne `SERVICE_DISABLED`, active Cloud Firestore dans la console Google ou utilise Realtime Database.

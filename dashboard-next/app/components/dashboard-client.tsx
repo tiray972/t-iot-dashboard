@@ -1,12 +1,12 @@
 "use client";
 
-import { Activity, Battery, Radio, RefreshCw, Signal, Thermometer, Waves } from "lucide-react";
+import { Activity, Battery, Flame, Gauge, Radio, RefreshCw, Signal, Thermometer, Waves } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { DashboardResponse, LoraReading } from "@/types/lora";
 
 const refreshMs = Number(process.env.NEXT_PUBLIC_DASHBOARD_REFRESH_MS || 15000);
 
-type MetricKey = "temperature" | "humidity" | "battery" | "rssi" | "snr";
+type MetricKey = "temperature" | "humidity" | "heatIndex" | "battery" | "airRaw" | "p1" | "rssi" | "snr";
 
 const metrics: Array<{
   key: MetricKey;
@@ -16,6 +16,9 @@ const metrics: Array<{
 }> = [
   { key: "temperature", label: "Temperature", suffix: "degC", stroke: "#ef4444" },
   { key: "humidity", label: "Humidite", suffix: "%", stroke: "#0ea5e9" },
+  { key: "heatIndex", label: "Indice chaleur", suffix: "degC", stroke: "#f97316" },
+  { key: "airRaw", label: "Air brut MQ", suffix: "adc", stroke: "#14b8a6" },
+  { key: "p1", label: "P1 Sensor.Community", suffix: "", stroke: "#64748b" },
   { key: "battery", label: "Batterie", suffix: "%", stroke: "#22c55e" },
   { key: "rssi", label: "RSSI", suffix: "dBm", stroke: "#f59e0b" },
   { key: "snr", label: "SNR", suffix: "dB", stroke: "#8b5cf6" }
@@ -70,8 +73,8 @@ export default function DashboardClient() {
     <main className="dashboard-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">T-IOT-77 / M5Stack LoRa</p>
-          <h1>Dashboard Firebase</h1>
+          <p className="eyebrow">T-IOT-902 / Sensor.Community compatible</p>
+          <h1>Dashboard capteurs</h1>
         </div>
         <button className="refresh-button" type="button" onClick={loadData} disabled={loading}>
           <RefreshCw size={18} aria-hidden="true" />
@@ -86,7 +89,8 @@ export default function DashboardClient() {
         <StatCard icon={<Activity size={22} />} label="Paquets" value={String(data?.summary.total ?? 0)} detail={data?.source || "demo"} />
         <StatCard icon={<Thermometer size={22} />} label="Temp. moyenne" value={formatValue(data?.summary.averageTemperature, "degC")} detail={formatValue(latest?.temperature, "degC", "Derniere")} />
         <StatCard icon={<Waves size={22} />} label="Humidite moyenne" value={formatValue(data?.summary.averageHumidity, "%")} detail={formatValue(latest?.humidity, "%", "Derniere")} />
-        <StatCard icon={<Battery size={22} />} label="Batterie moyenne" value={formatValue(data?.summary.averageBattery, "%")} detail={formatValue(latest?.battery, "%", "Derniere")} />
+        <StatCard icon={<Flame size={22} />} label="Chaleur ressentie" value={formatValue(data?.summary.averageHeatIndex, "degC")} detail={formatValue(latest?.heatIndex, "degC", "Derniere")} />
+        <StatCard icon={<Gauge size={22} />} label="Qualite air" value={formatValue(data?.summary.averageAirRaw ?? data?.summary.averageP1, "adc")} detail={latest?.airQuality || "MQ / P1"} />
         <StatCard icon={<Signal size={22} />} label="Signal" value={formatValue(latest?.rssi, "dBm")} detail={signalHealth} />
         <StatCard icon={<Radio size={22} />} label="Derniere reception" value={lastSeen} detail={latest?.gatewayId || "Gateway inconnue"} />
       </section>
@@ -117,6 +121,9 @@ export default function DashboardClient() {
                 <th>Device</th>
                 <th>Temp.</th>
                 <th>Hum.</th>
+                <th>HIC</th>
+                <th>Air</th>
+                <th>Qualite</th>
                 <th>Bat.</th>
                 <th>RSSI</th>
                 <th>SNR</th>
@@ -130,6 +137,9 @@ export default function DashboardClient() {
                   <td>{item.deviceId || "--"}</td>
                   <td>{formatValue(item.temperature, "degC")}</td>
                   <td>{formatValue(item.humidity, "%")}</td>
+                  <td>{formatValue(item.heatIndex, "degC")}</td>
+                  <td>{formatValue(item.airRaw ?? item.p1, "")}</td>
+                  <td>{item.airQuality || "--"}</td>
                   <td>{formatValue(item.battery, "%")}</td>
                   <td>{formatValue(item.rssi, "dBm")}</td>
                   <td>{formatValue(item.snr, "dB")}</td>

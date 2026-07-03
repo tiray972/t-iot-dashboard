@@ -75,6 +75,83 @@ async function fetchRealtimeDatabase(limit: number): Promise<LoraReading[]> {
     .slice(-limit);
 }
 
+export async function saveDashboardReading(input: unknown): Promise<LoraReading> {
+  const reading = normalizeReading(`ingest-${Date.now()}`, {
+    ...normalizeObjectInput(input),
+    timestamp: new Date().toISOString()
+  });
+
+  if (process.env.FIREBASE_RTDB_URL) {
+    await writeRealtimeDatabase(reading);
+    return reading;
+  }
+
+  if (process.env.FIREBASE_FIRESTORE_PROJECT_ID) {
+    await writeFirestore(reading);
+    return reading;
+  }
+
+  return reading;
+}
+
+async function writeRealtimeDatabase(reading: LoraReading): Promise<void> {
+  const baseUrl = process.env.FIREBASE_RTDB_URL?.replace(/\/$/, "");
+  const path = (process.env.FIREBASE_RTDB_PATH || "lora-readings").replace(/^\/|\/$/g, "");
+
+  if (!baseUrl) {
+    return;
+  }
+
+  const url = new URL(`${baseUrl}/${path}.json`);
+  const auth = process.env.FIREBASE_ID_TOKEN || process.env.FIREBASE_DATABASE_SECRET;
+
+  if (auth) {
+    url.searchParams.set("auth", auth);
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(reading)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Firebase RTDB write error ${response.status}: ${await response.text()}`);
+  }
+}
+
+async function writeFirestore(reading: LoraReading): Promise<void> {
+  const projectId = process.env.FIREBASE_FIRESTORE_PROJECT_ID;
+  const collection = process.env.FIREBASE_FIRESTORE_COLLECTION || "lora-readings";
+
+  if (!projectId) {
+    return;
+  }
+
+  const url = new URL(
+    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collection}`
+  );
+
+  if (process.env.FIREBASE_API_KEY) {
+    url.searchParams.set("key", process.env.FIREBASE_API_KEY);
+  }
+
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  if (process.env.FIREBASE_BEARER_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.FIREBASE_BEARER_TOKEN}`;
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ fields: encodeFirestoreFields(reading) })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Firestore write error ${response.status}: ${await response.text()}`);
+  }
+}
+
 async function fetchFirestore(limit: number): Promise<LoraReading[]> {
   const projectId = process.env.FIREBASE_FIRESTORE_PROJECT_ID;
   const collection = process.env.FIREBASE_FIRESTORE_COLLECTION || "lora-readings";
@@ -122,6 +199,7 @@ function normalizeReading(id: string, value: unknown): LoraReading {
   const record = isRecord(value) ? value : {};
   const payload = stringValue(record.payload);
   const parsedPayload = parsePayload(payload);
+  const sensorValues = parseSensorDataValues(record.sensordatavalues);
   const timestampValue =
     stringValue(record.timestamp) ||
     stringValue(record.createdAt) ||
@@ -136,9 +214,32 @@ function normalizeReading(id: string, value: unknown): LoraReading {
     gatewayId: stringValue(record.gateway_id) || stringValue(record.gatewayId),
     deviceId: stringValue(record.device_id) || stringValue(record.deviceId) || parsedPayload.id,
     payload,
-    temperature: numberValue(record.temperature) ?? numberValue(record.temp) ?? parsedPayload.temperature,
-    humidity: numberValue(record.humidity) ?? numberValue(record.hum) ?? parsedPayload.humidity,
+    temperature:
+      numberValue(record.temperature) ??
+      numberValue(record.temp) ??
+      sensorValues.temperature ??
+      parsedPayload.temperature,
+    humidity:
+      numberValue(record.humidity) ??
+      numberValue(record.hum) ??
+      sensorValues.humidity ??
+      parsedPayload.humidity,
+    heatIndex:
+      numberValue(record.heatIndex) ??
+      numberValue(record.hic) ??
+      parsedPayload.heatIndex,
     battery: numberValue(record.battery) ?? numberValue(record.bat) ?? parsedPayload.battery,
+    airRaw:
+      numberValue(record.airRaw) ??
+      numberValue(record.air) ??
+      sensorValues.p1 ??
+      parsedPayload.airRaw,
+    airQuality:
+      stringValue(record.airQuality) ||
+      stringValue(record.qualite) ||
+      parsedPayload.airQuality,
+    p1: numberValue(record.p1) ?? numberValue(record.P1) ?? sensorValues.p1,
+    p2: numberValue(record.p2) ?? numberValue(record.P2) ?? sensorValues.p2,
     rssi: numberValue(record.rssi),
     snr: numberValue(record.snr),
     uptimeMs: numberValue(record.uptime_ms) ?? numberValue(record.uptimeMs)
@@ -154,9 +255,10 @@ function parsePayload(payload?: string): Partial<LoraReading> {
   const parts = payload.split(";");
 
   for (const part of parts) {
-    const [rawKey, rawValue] = part.split(":");
+    const separator = part.includes("=") ? "=" : ":";
+    const [rawKey, ...rawValueParts] = part.split(separator);
     const key = rawKey?.trim();
-    const value = rawValue?.trim();
+    const value = rawValueParts.join(separator).trim();
 
     if (!key || !value) {
       continue;
@@ -164,11 +266,57 @@ function parsePayload(payload?: string): Partial<LoraReading> {
 
     if (key === "temp") result.temperature = Number(value);
     if (key === "hum") result.humidity = Number(value);
+    if (key === "hic") result.heatIndex = Number(value);
     if (key === "bat") result.battery = Number(value);
+    if (key === "air") result.airRaw = Number(value);
+    if (key === "qualite") result.airQuality = value;
     if (key === "id") result.deviceId = value;
   }
 
   return result;
+}
+
+function parseSensorDataValues(value: unknown): Partial<LoraReading> {
+  if (!Array.isArray(value)) {
+    return {};
+  }
+
+  const result: Partial<LoraReading> = {};
+
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const type = stringValue(entry.value_type);
+    const entryValue = numberValue(entry.value);
+
+    if (!type || entryValue === undefined) {
+      continue;
+    }
+
+    if (type === "temperature") result.temperature = entryValue;
+    if (type === "humidity") result.humidity = entryValue;
+    if (type === "P1") result.p1 = entryValue;
+    if (type === "P2") result.p2 = entryValue;
+  }
+
+  return result;
+}
+
+function normalizeObjectInput(input: unknown): Record<string, unknown> {
+  if (!isRecord(input)) {
+    return {};
+  }
+
+  if (Array.isArray(input.sensordatavalues)) {
+    return {
+      ...input,
+      gatewayId: stringValue(input.gatewayId) || stringValue(input.gateway_id) || "sensor-community-gateway"
+    };
+  }
+
+  return input;
 }
 
 function decodeFirestoreFields(fields: Record<string, FirestoreValue>): Record<string, unknown> {
@@ -185,6 +333,26 @@ function decodeFirestoreValue(value: FirestoreValue): unknown {
   if ("booleanValue" in value) return value.booleanValue;
   if ("mapValue" in value) return decodeFirestoreFields(value.mapValue?.fields || {});
   return undefined;
+}
+
+function encodeFirestoreFields(record: Record<string, unknown>): Record<string, FirestoreValue> {
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => [key, encodeFirestoreValue(value)])
+  );
+}
+
+function encodeFirestoreValue(value: unknown): FirestoreValue {
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  }
+
+  if (typeof value === "boolean") {
+    return { booleanValue: value };
+  }
+
+  return { stringValue: String(value) };
 }
 
 function buildResponse(
@@ -204,6 +372,10 @@ function buildResponse(
       latest,
       averageTemperature: average(items.map((item) => item.temperature)),
       averageHumidity: average(items.map((item) => item.humidity)),
+      averageHeatIndex: average(items.map((item) => item.heatIndex)),
+      averageAirRaw: average(items.map((item) => item.airRaw)),
+      averageP1: average(items.map((item) => item.p1)),
+      averageP2: average(items.map((item) => item.p2)),
       averageRssi: average(items.map((item) => item.rssi)),
       averageBattery: average(items.map((item) => item.battery))
     }
@@ -218,6 +390,7 @@ function buildDemoReadings(): LoraReading[] {
     const temperature = 22 + Math.sin(angle) * 3 + index * 0.03;
     const humidity = 52 + Math.cos(angle / 1.3) * 8;
     const battery = 96 - index * 0.45;
+    const airRaw = 420 + Math.sin(angle / 1.5) * 120 + index * 2;
     const rssi = -72 - Math.sin(angle / 1.7) * 9;
 
     return {
@@ -225,10 +398,14 @@ function buildDemoReadings(): LoraReading[] {
       timestamp: new Date(now - (35 - index) * 60_000).toISOString(),
       gatewayId: "M5Stack_Receiver_Gateway",
       deviceId: `node-${index % 3}`,
-      payload: `temp:${temperature.toFixed(1)};hum:${humidity.toFixed(1)};bat:${battery.toFixed(0)};id:${index}`,
+      payload: `id=${index}; temp=${temperature.toFixed(1)}; hum=${humidity.toFixed(1)}; hic=${(temperature + 1.4).toFixed(1)}; air=${airRaw.toFixed(1)}; qualite=Bonne`,
       temperature: round(temperature),
       humidity: round(humidity),
+      heatIndex: round(temperature + 1.4),
       battery: round(battery),
+      airRaw: round(airRaw),
+      airQuality: airRaw > 620 ? "Moyenne" : "Bonne",
+      p1: round(airRaw),
       rssi: round(rssi),
       snr: round(7 + Math.cos(angle) * 2),
       uptimeMs: index * 120_000
