@@ -1,4 +1,5 @@
 import type { DashboardResponse, LoraReading } from "@/types/lora";
+import { getAdminFirestore } from "./firebase-admin";
 
 type FirestoreValue =
   | { stringValue?: string }
@@ -121,6 +122,13 @@ async function writeRealtimeDatabase(reading: LoraReading): Promise<void> {
 }
 
 async function writeFirestore(reading: LoraReading): Promise<void> {
+  const adminDb = getAdminFirestore();
+  if (adminDb) {
+    const collection = process.env.FIREBASE_FIRESTORE_COLLECTION || "lora-readings";
+    await adminDb.collection(collection).add(stripUndefined(reading));
+    return;
+  }
+
   const projectId = process.env.FIREBASE_FIRESTORE_PROJECT_ID;
   const collection = process.env.FIREBASE_FIRESTORE_COLLECTION || "lora-readings";
 
@@ -153,6 +161,20 @@ async function writeFirestore(reading: LoraReading): Promise<void> {
 }
 
 async function fetchFirestore(limit: number): Promise<LoraReading[]> {
+  const adminDb = getAdminFirestore();
+  if (adminDb) {
+    const collection = process.env.FIREBASE_FIRESTORE_COLLECTION || "lora-readings";
+    const snapshot = await adminDb
+      .collection(collection)
+      .orderBy("timestamp", "desc")
+      .limit(limit)
+      .get();
+
+    return snapshot.docs
+      .map((document) => normalizeReading(document.id, normalizeAdminFirestoreData(document.data())))
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }
+
   const projectId = process.env.FIREBASE_FIRESTORE_PROJECT_ID;
   const collection = process.env.FIREBASE_FIRESTORE_COLLECTION || "lora-readings";
 
@@ -353,6 +375,24 @@ function encodeFirestoreValue(value: unknown): FirestoreValue {
   }
 
   return { stringValue: String(value) };
+}
+
+function normalizeAdminFirestoreData(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => {
+      if (isRecord(value) && typeof value.toDate === "function") {
+        return [key, value.toDate().toISOString()];
+      }
+
+      return [key, value];
+    })
+  );
+}
+
+function stripUndefined<T extends Record<string, unknown>>(record: T): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined)
+  );
 }
 
 function buildResponse(

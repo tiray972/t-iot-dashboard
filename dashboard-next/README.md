@@ -34,7 +34,12 @@ FIREBASE_FIRESTORE_PROJECT_ID=ton-projet
 FIREBASE_FIRESTORE_COLLECTION=lora-readings
 FIREBASE_BEARER_TOKEN=
 FIREBASE_API_KEY=
+FIREBASE_SERVICE_ACCOUNT_KEY=
 ```
+
+Pour garder des règles Firestore privées sur Vercel, utilise `FIREBASE_SERVICE_ACCOUNT_KEY`.
+Dans Firebase Console: Paramètres du projet -> Comptes de service -> Générer une nouvelle clé privée.
+Colle le JSON complet dans la variable Vercel `FIREBASE_SERVICE_ACCOUNT_KEY`.
 
 ## Format attendu
 
